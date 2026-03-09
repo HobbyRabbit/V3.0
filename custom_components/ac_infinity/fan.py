@@ -1,50 +1,45 @@
-from homeassistant.components.fan import FanEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+import logging
+from datetime import timedelta
 
-from .const import DOMAIN, PORT_COUNT
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .ble_device import ACInfinityBLE
+from .const import DOMAIN, SCAN_INTERVAL
 
-async def async_setup_entry(hass, entry, async_add_entities):
-
-    coordinator = hass.data[DOMAIN][entry.entry_id]
-
-    fans = []
-
-    for port in range(1, PORT_COUNT + 1):
-
-        fans.append(ACInfinityFan(coordinator, entry.entry_id, port))
-
-    async_add_entities(fans)
+_LOGGER = logging.getLogger(__name__)
 
 
-class ACInfinityFan(CoordinatorEntity, FanEntity):
+class ACInfinityCoordinator(DataUpdateCoordinator):
 
-    def __init__(self, coordinator, entry_id, port):
+    def __init__(self, hass, entry):
 
-        super().__init__(coordinator)
+        self.hass = hass
 
-        self.port = port
+        self.address = entry.data["address"]
 
-        self._attr_unique_id = f"{entry_id}_fan_{port}"
+        self.ble = ACInfinityBLE(self.address)
 
-        self._attr_name = f"AC Infinity Port {port}"
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=DOMAIN,
+            update_interval=timedelta(seconds=SCAN_INTERVAL),
+        )
 
-    @property
-    def percentage(self):
+    async def _async_update_data(self):
 
-        return self.coordinator.data["ports"].get(self.port)
+        await self.ble.connect()
 
-    async def async_set_percentage(self, percentage):
+        return await self.ble.request_state()
 
-        await self.coordinator.set_port_speed(self.port, percentage)
+    async def set_port_speed(self, port, speed):
 
-    async def async_turn_on(self, percentage=None, preset_mode=None, **kwargs):
+        await self.ble.set_speed(port, speed)
 
-        if percentage is None:
-            percentage = 100
+        await self.async_request_refresh()
 
-        await self.coordinator.set_port_speed(self.port, percentage)
+    async def set_port_power(self, port, state):
 
-    async def async_turn_off(self, **kwargs):
+        await self.ble.set_power(port, state)
 
-        await self.coordinator.set_port_speed(self.port, 0)
+        await self.async_request_refresh()
