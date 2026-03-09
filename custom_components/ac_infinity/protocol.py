@@ -1,5 +1,4 @@
 def checksum(data):
-
     return sum(data) & 0xFF
 
 
@@ -21,13 +20,11 @@ def parse_state(packet):
     temp_raw = (packet[4] << 8) | packet[5]
 
     temperature = temp_raw / 10
-
     humidity = packet[6]
 
     ports = {}
 
     for i in range(8):
-
         ports[i + 1] = packet[7 + i]
 
     return temperature, humidity, ports
