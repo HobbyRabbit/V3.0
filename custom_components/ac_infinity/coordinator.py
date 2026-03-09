@@ -9,12 +9,12 @@ from .ble_device import ACInfinityBLE
 
 _LOGGER = logging.getLogger(__name__)
 
-
 class ACInfinityCoordinator(DataUpdateCoordinator):
 
-    def __init__(self, hass: HomeAssistant, address: str):
+    def __init__(self, hass, address):
 
-        self.ble = ACInfinityBLE(address)
+        self.ble = ACInfinityBLE(hass, address)
+
 
         super().__init__(
             hass,
