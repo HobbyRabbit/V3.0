@@ -29,7 +29,6 @@ class ACTemperature(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-
         return self.coordinator.data["temperature"]
 
 
@@ -47,7 +46,6 @@ class ACHumidity(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-
         return self.coordinator.data["humidity"]
 
 
