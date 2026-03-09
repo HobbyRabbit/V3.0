@@ -2,9 +2,9 @@ import asyncio
 import logging
 
 from bleak import BleakClient
+from bleak_retry_connector import establish_connection
 
-from .const import WRITE_UUID, NOTIFY_UUID, BLE_TIMEOUT
-from .protocol import build_packet, parse_state
+from .const import SERVICE_UUID, WRITE_UUID, NOTIFY_UUID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -14,88 +14,95 @@ class ACInfinityBLE:
     def __init__(self, address):
 
         self.address = address
-        self.client = BleakClient(address)
+        self.client: BleakClient | None = None
+        self.connected = False
 
-        self.temperature = None
-        self.humidity = None
-        self.ports = {}
-
-        self._response_event = asyncio.Event()
-        self._command_lock = asyncio.Lock()
+        self._notify_event = asyncio.Event()
+        self._buffer = None
 
     async def connect(self):
 
-        if self.client.is_connected:
-            return
+        _LOGGER.debug("Connecting to %s", self.address)
 
-        await self.client.connect()
+        self.client = await establish_connection(
+            BleakClient,
+            self.address,
+            "ac_infinity",
+            timeout=20
+        )
 
         await self.client.start_notify(
             NOTIFY_UUID,
-            self._notification_handler,
+            self._notification_handler
         )
+
+        self.connected = True
 
     async def disconnect(self):
 
-        if self.client.is_connected:
+        if self.client:
             await self.client.disconnect()
+
+        self.connected = False
 
     def _notification_handler(self, sender, data):
 
-        if len(data) < 5:
-            return
+        _LOGGER.debug("BLE Notify: %s", data.hex())
 
-        if data[0] != 0xAA or data[1] != 0x55:
-            return
+        self._buffer = data
+        self._notify_event.set()
 
-        cmd = data[3]
+    async def send(self, payload: bytes):
 
-        if cmd == 0x20:
+        await self.client.write_gatt_char(
+            WRITE_UUID,
+            payload,
+            response=False
+        )
 
-            temp, hum, ports = parse_state(data)
+    async def request(self, payload: bytes):
 
-            self.temperature = temp
-            self.humidity = hum
-            self.ports = ports
+        self._notify_event.clear()
 
-            self._response_event.set()
-
-    async def _send_command(self, packet):
-
-        async with self._command_lock:
-
-            await self.client.write_gatt_char(WRITE_UUID, packet)
-
-    async def request_state(self):
-
-        packet = build_packet(0x10, [])
-
-        self._response_event.clear()
-
-        await self._send_command(packet)
+        await self.send(payload)
 
         try:
-            await asyncio.wait_for(
-                self._response_event.wait(),
-                BLE_TIMEOUT,
-            )
+            await asyncio.wait_for(self._notify_event.wait(), timeout=5)
         except asyncio.TimeoutError:
-            _LOGGER.warning("AC Infinity BLE response timeout")
+            _LOGGER.warning("BLE timeout")
+            return None
 
-        return {
-            "temperature": self.temperature,
-            "humidity": self.humidity,
-            "ports": self.ports,
-        }
+        return self._buffer
 
-    async def set_speed(self, port, speed):
+    async def get_status(self):
 
-        packet = build_packet(0x11, [port, speed])
+        cmd = bytes([
+            0xAA, 0x55,
+            0x01,
+            0x00
+        ])
 
-        await self._send_command(packet)
+        data = await self.request(cmd)
 
-    async def set_power(self, port, state):
+        if not data:
+            return {}
 
-        packet = build_packet(0x12, [port, 1 if state else 0])
+        return self.parse_status(data)
 
-        await self._send_command(packet)
+    def parse_status(self, data):
+
+        try:
+
+            fan_speed = data[5]
+            temperature = data[6]
+            humidity = data[7]
+
+            return {
+                "speed": fan_speed,
+                "temperature": temperature,
+                "humidity": humidity
+            }
+
+        except Exception as e:
+            _LOGGER.error("Parse error %s", e)
+            return {}
