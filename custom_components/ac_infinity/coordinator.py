@@ -23,7 +23,7 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=SCAN_INTERVAL)
+            update_interval=timedelta(seconds=SCAN_INTERVAL),
         )
 
     async def _async_update_data(self):
