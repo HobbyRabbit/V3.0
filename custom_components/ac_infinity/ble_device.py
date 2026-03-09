@@ -4,17 +4,22 @@ import logging
 from bleak import BleakClient
 from bleak_retry_connector import establish_connection
 
-from .const import SERVICE_UUID, WRITE_UUID, NOTIFY_UUID
+from homeassistant.components import bluetooth
+
+from .const import WRITE_UUID, NOTIFY_UUID
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class ACInfinityBLE:
 
-    def __init__(self, address):
+    def __init__(self, hass, address):
 
+        self.hass = hass
         self.address = address
-        self.client: BleakClient | None = None
+
+        self.client = None
+        self.device = None
         self.connected = False
 
         self._notify_event = asyncio.Event()
@@ -22,12 +27,25 @@ class ACInfinityBLE:
 
     async def connect(self):
 
+        if self.connected:
+            return
+
+        _LOGGER.debug("Finding BLE device %s", self.address)
+
+        self.device = bluetooth.async_ble_device_from_address(
+            self.hass,
+            self.address
+        )
+
+        if not self.device:
+            raise RuntimeError("Device not found in HA bluetooth registry")
+
         _LOGGER.debug("Connecting to %s", self.address)
 
         self.client = await establish_connection(
             BleakClient,
+            self.device,
             self.address,
-            "ac_infinity",
             timeout=20
         )
 
@@ -47,7 +65,7 @@ class ACInfinityBLE:
 
     def _notification_handler(self, sender, data):
 
-        _LOGGER.debug("BLE Notify: %s", data.hex())
+        _LOGGER.debug("BLE notify %s", data.hex())
 
         self._buffer = data
         self._notify_event.set()
@@ -76,11 +94,7 @@ class ACInfinityBLE:
 
     async def get_status(self):
 
-        cmd = bytes([
-            0xAA, 0x55,
-            0x01,
-            0x00
-        ])
+        cmd = bytes([0xAA, 0x55, 0x01, 0x00])
 
         data = await self.request(cmd)
 
@@ -93,16 +107,18 @@ class ACInfinityBLE:
 
         try:
 
-            fan_speed = data[5]
+            speed = data[5]
             temperature = data[6]
             humidity = data[7]
 
             return {
-                "speed": fan_speed,
+                "speed": speed,
                 "temperature": temperature,
                 "humidity": humidity
             }
 
-        except Exception as e:
-            _LOGGER.error("Parse error %s", e)
+        except Exception as err:
+
+            _LOGGER.error("Parse error %s", err)
+
             return {}
