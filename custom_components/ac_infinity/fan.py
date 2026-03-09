@@ -1,45 +1,25 @@
-import logging
-from datetime import timedelta
+from homeassistant.components.fan import FanEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-
-from .ble_device import ACInfinityBLE
-from .const import DOMAIN, SCAN_INTERVAL
-
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN
 
 
-class ACInfinityCoordinator(DataUpdateCoordinator):
+async def async_setup_entry(hass, entry, async_add_entities):
 
-    def __init__(self, hass, entry):
+    coordinator = hass.data[DOMAIN][entry.entry_id]
 
-        self.hass = hass
+    async_add_entities([ACInfinityFan(coordinator)])
 
-        self.address = entry.data["address"]
 
-        self.ble = ACInfinityBLE(self.address)
+class ACInfinityFan(CoordinatorEntity, FanEntity):
 
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=DOMAIN,
-            update_interval=timedelta(seconds=SCAN_INTERVAL),
-        )
+    def __init__(self, coordinator):
 
-    async def _async_update_data(self):
+        super().__init__(coordinator)
 
-        await self.ble.connect()
+        self._attr_name = "AC Infinity Fan"
 
-        return await self.ble.request_state()
+    @property
+    def percentage(self):
 
-    async def set_port_speed(self, port, speed):
-
-        await self.ble.set_speed(port, speed)
-
-        await self.async_request_refresh()
-
-    async def set_port_power(self, port, state):
-
-        await self.ble.set_power(port, state)
-
-        await self.async_request_refresh()
+        return self.coordinator.data.get("speed", 0) * 10
