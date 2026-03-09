@@ -26,18 +26,14 @@ class ACInfinitySwitch(CoordinatorEntity, SwitchEntity):
         self.port = port
 
         self._attr_unique_id = f"{entry_id}_power_{port}"
-
         self._attr_name = f"AC Infinity Port {port} Power"
 
     @property
     def is_on(self):
-
-        return self.coordinator.data["ports"].get(self.port) > 0
+        return self.coordinator.data["ports"].get(self.port, 0) > 0
 
     async def async_turn_on(self, **kwargs):
-
         await self.coordinator.set_port_power(self.port, True)
 
     async def async_turn_off(self, **kwargs):
-
         await self.coordinator.set_port_power(self.port, False)
