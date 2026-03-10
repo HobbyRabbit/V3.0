@@ -13,29 +13,26 @@ class ACInfinityDecoder:
 
         try:
 
-            if len(data) < 8:
+            if len(data) < 4:
                 return self.state
 
             header = data[0]
 
             if header == 0xB1:
 
-                temp = data[6]
-                hum = data[7]
-
-                self.state["temperature"] = float(temp)
-                self.state["humidity"] = float(hum)
+                self.state["temperature"] = float(data[6])
+                self.state["humidity"] = float(data[7])
 
             if header == 0xB2:
 
-                speed = data[3]
-                self.state["fan_speed"] = speed
+                self.state["fan_speed"] = data[3]
 
             if header == 0xB3:
 
                 mask = data[3]
 
                 for i in range(8):
+
                     self.state["ports"][i] = bool(mask & (1 << i))
 
         except Exception:
