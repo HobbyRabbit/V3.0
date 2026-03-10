@@ -1,8 +1,8 @@
-def build_status_request():
+def status_request():
     return bytes([0xA1, 0x01, 0x00])
 
 
-def build_set_port(port, state):
+def set_port(port, state):
 
     return bytes([
         0xA2,
@@ -11,7 +11,7 @@ def build_set_port(port, state):
     ])
 
 
-def build_set_speed(speed):
+def set_speed(speed):
 
     return bytes([
         0xA3,
