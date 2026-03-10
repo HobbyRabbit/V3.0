@@ -1,30 +1,19 @@
-def checksum(data):
-    return sum(data) & 0xFF
+def build_status_request():
+    return bytes([0xA1, 0x01, 0x00])
 
 
-def build_packet(cmd, payload):
+def build_set_port(port, state):
 
-    length = len(payload) + 1
-
-    frame = bytearray([0xAA, 0x55, length, cmd])
-
-    frame.extend(payload)
-
-    frame.append(checksum(frame[2:]))
-
-    return frame
+    return bytes([
+        0xA2,
+        port,
+        1 if state else 0
+    ])
 
 
-def parse_state(packet):
+def build_set_speed(speed):
 
-    temp_raw = (packet[4] << 8) | packet[5]
-
-    temperature = temp_raw / 10
-    humidity = packet[6]
-
-    ports = {}
-
-    for i in range(8):
-        ports[i + 1] = packet[7 + i]
-
-    return temperature, humidity, ports
+    return bytes([
+        0xA3,
+        speed
+    ])
