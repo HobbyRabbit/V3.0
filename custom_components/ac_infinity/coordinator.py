@@ -16,6 +16,7 @@ from .protocol import *
 from .decoder import ACInfinityDecoder
 from .packet_logger import PacketLogger
 
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -33,10 +34,11 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
         self.mac = mac
         self.client = None
 
+        self.write_char = None
+        self.notify_char = None
+
         self.decoder = ACInfinityDecoder()
         self.logger = PacketLogger()
-
-        self.learning_mode = True
 
     async def _ensure_connected(self):
 
@@ -54,15 +56,37 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
             self.name
         )
 
+        await self._discover_characteristics()
+
         await self.client.start_notify(
-            NOTIFY_UUID,
+            self.notify_char,
             self._notification_handler
         )
 
+        _LOGGER.debug("AC Infinity BLE connected")
+
+    async def _discover_characteristics(self):
+
+        services = await self.client.get_services()
+
+        for service in services:
+
+            for char in service.characteristics:
+
+                props = char.properties
+
+                if "write" in props and not self.write_char:
+                    self.write_char = char.uuid
+
+                if "notify" in props and not self.notify_char:
+                    self.notify_char = char.uuid
+
+        _LOGGER.debug("Write char: %s", self.write_char)
+        _LOGGER.debug("Notify char: %s", self.notify_char)
+
     def _notification_handler(self, sender, data):
 
-        if self.learning_mode:
-            self.logger.log("notify", data)
+        self.logger.log("notify", data)
 
         state = self.decoder.decode(data)
 
@@ -72,12 +96,12 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
 
         await self._ensure_connected()
 
-        packet = build_status_request()
+        packet = status_request()
 
         self.logger.log("write", packet)
 
         await self.client.write_gatt_char(
-            WRITE_UUID,
+            self.write_char,
             packet,
             response=True
         )
@@ -86,24 +110,24 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
 
     async def set_port(self, port, state):
 
-        packet = build_set_port(port, state)
+        packet = set_port(port, state)
 
         self.logger.log("write", packet)
 
         await self.client.write_gatt_char(
-            WRITE_UUID,
+            self.write_char,
             packet,
             response=True
         )
 
     async def set_speed(self, speed):
 
-        packet = build_set_speed(speed)
+        packet = set_speed(speed)
 
         self.logger.log("write", packet)
 
         await self.client.write_gatt_char(
-            WRITE_UUID,
+            self.write_char,
             packet,
             response=True
         )
