@@ -12,6 +12,9 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.components.bluetooth import async_ble_device_from_address
 
 from .const import *
+from .protocol import *
+from .decoder import ACInfinityDecoder
+from .packet_logger import PacketLogger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,14 +33,10 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
         self.mac = mac
         self.client = None
 
-        self.state = {
-            "temperature": None,
-            "humidity": None,
-            "ports": [False] * 8,
-            "fan_speed": 0,
-        }
+        self.decoder = ACInfinityDecoder()
+        self.logger = PacketLogger()
 
-        self.learning_mode = False
+        self.learning_mode = True
 
     async def _ensure_connected(self):
 
@@ -47,81 +46,64 @@ class ACInfinityCoordinator(DataUpdateCoordinator):
         ble_device = async_ble_device_from_address(self.hass, self.mac)
 
         if not ble_device:
-            raise UpdateFailed(f"Device {self.mac} not found")
+            raise UpdateFailed("BLE device not found")
 
-        try:
+        self.client = await establish_connection(
+            BleakClient,
+            ble_device,
+            self.name
+        )
 
-            self.client = await establish_connection(
-                BleakClient,
-                ble_device,
-                self.name,
-            )
-
-            await self.client.start_notify(
-                NOTIFY_UUID,
-                self._notification_handler,
-            )
-
-        except Exception as err:
-            raise UpdateFailed(f"BLE connect failed: {err}") from err
+        await self.client.start_notify(
+            NOTIFY_UUID,
+            self._notification_handler
+        )
 
     def _notification_handler(self, sender, data):
 
         if self.learning_mode:
-            _LOGGER.warning("LEARNING PACKET: %s", data.hex())
+            self.logger.log("notify", data)
 
-        try:
+        state = self.decoder.decode(data)
 
-            if len(data) > 10:
-
-                temp = data[8]
-                hum = data[9]
-
-                self.state["temperature"] = float(temp)
-                self.state["humidity"] = float(hum)
-
-        except Exception as e:
-            _LOGGER.debug("Parse error %s", e)
+        self.async_set_updated_data(state)
 
     async def _async_update_data(self):
 
         await self._ensure_connected()
 
-        try:
+        packet = build_status_request()
 
-            await self.client.write_gatt_char(
-                WRITE_UUID,
-                bytes([0xA1, 0x01, 0x00]),
-                response=True,
-            )
+        self.logger.log("write", packet)
 
-        except Exception as err:
-            raise UpdateFailed(err)
+        await self.client.write_gatt_char(
+            WRITE_UUID,
+            packet,
+            response=True
+        )
 
-        return self.state
+        return self.decoder.state
 
     async def set_port(self, port, state):
 
-        cmd = bytes([0xA2, port, 1 if state else 0])
+        packet = build_set_port(port, state)
+
+        self.logger.log("write", packet)
 
         await self.client.write_gatt_char(
             WRITE_UUID,
-            cmd,
-            response=True,
+            packet,
+            response=True
         )
-
-        self.state["ports"][port - 1] = state
-        self.async_set_updated_data(self.state)
 
     async def set_speed(self, speed):
 
-        cmd = bytes([0xA3, speed])
+        packet = build_set_speed(speed)
+
+        self.logger.log("write", packet)
 
         await self.client.write_gatt_char(
             WRITE_UUID,
-            cmd,
-            response=True,
+            packet,
+            response=True
         )
-
-        self.state["fan_speed"] = speed
-        self.async_set_updated_data(self.state)
