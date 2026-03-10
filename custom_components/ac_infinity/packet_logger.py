@@ -1,7 +1,6 @@
 import csv
 import os
 import time
-
 from .const import CSV_LOG
 
 
